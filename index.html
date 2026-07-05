@@ -67,8 +67,8 @@
 
   .gm-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
 
-  .gm-table-row { display: grid; grid-template-columns: 1fr 100px 130px 84px 90px; align-items: center; padding: 9px 4px; border-bottom: 1px solid #F1F5F9; font-size: 13px; }
-  .gm-table-head { display: grid; grid-template-columns: 1fr 100px 130px 84px 90px; padding: 8px 4px; font-size: 11px; font-weight: 700; color: #64748B; border-bottom: 1px solid #E2E8F0; }
+  .gm-table-row { display: grid; grid-template-columns: 1fr 100px 130px 84px 90px 84px; align-items: center; padding: 9px 4px; border-bottom: 1px solid #F1F5F9; font-size: 13px; }
+  .gm-table-head { display: grid; grid-template-columns: 1fr 100px 130px 84px 90px 84px; padding: 8px 4px; font-size: 11px; font-weight: 700; color: #64748B; border-bottom: 1px solid #E2E8F0; }
 
   .gm-btn { padding: 6px 11px; border-radius: 7px; border: 1px solid #0F172A; background: #fff; color: #0F172A; font-size: 12.5px; font-weight: 600; }
   .gm-btn.dark { background: #0F172A; color: #fff; }
@@ -112,7 +112,7 @@
         <div class="brand-title">목표관리 대시보드</div>
       </div>
       <div>
-        <div class="nav-label">보기</div>
+        <div class="nav-label">보기 (자유롭게 전환 가능)</div>
         <button class="nav-btn" data-view="member">내 목표</button>
         <button class="nav-btn" data-view="leader">팀 대시보드</button>
         <button class="nav-btn" data-view="exec">경영진 뷰</button>
@@ -208,10 +208,19 @@
     $('#gm-who-name').textContent = profile.name;
     $('#gm-who-role').textContent = roleLabel(profile.org_role);
     if (profile.org_role === 'admin') $('#gm-nav-admin').classList.remove('hidden');
-    currentView = profile.org_role === 'member' ? 'member' : (profile.org_role === 'leader' ? 'leader' : 'exec');
     await loadGoals();
+    // 본인 소유 목표가 있으면 역할과 무관하게 "내 목표"부터 보여줌 (관리자/팀장이라도 담당 업무가 있을 수 있음)
+    const mine = goals.filter(isMine);
+    currentView = mine.length > 0 ? 'member' : (profile.org_role === 'leader' ? 'leader' : (profile.org_role === 'member' ? 'member' : 'exec'));
+    updateNavBadges();
     renderNav();
     renderView();
+  }
+
+  function updateNavBadges() {
+    const mine = goals.filter(isMine);
+    const memberBtn = document.querySelector('.nav-btn[data-view="member"]');
+    if (memberBtn) memberBtn.innerHTML = '내 목표' + (mine.length ? ` <span style="background:#334155;color:#fff;border-radius:999px;padding:1px 6px;font-size:10.5px;margin-left:4px;">${mine.length}</span>` : '');
   }
 
   // 이메일 인증(또는 매직링크) 후 리디렉션되면 URL 해시에 access_token이 담겨옵니다.
@@ -258,6 +267,25 @@
   const STATUS_BG = { '완료': '#ECFDF5', '진행중': '#EFF6FF', '지연': '#FEF2F2' };
   const STATUS_TEXT = { '완료': '#047857', '진행중': '#1D4ED8', '지연': '#B91C1C' };
 
+  function isMine(g) {
+    if (!g) return false;
+    if (g.owner_id && session && g.owner_id === session.user.id) return true;
+    if (g.owner_email && profile && g.owner_email.trim().toLowerCase() === (profile.email||'').trim().toLowerCase()) return true;
+    return false;
+  }
+
+  // 분기 필터: 목표의 [시작일~종료일] 구간이 선택한 분기와 겹치는지 확인
+  const QUARTER_RANGES = {
+    '1': ['01-01', '03-31'], '2': ['04-01', '06-30'], '3': ['07-01', '09-30'], '4': ['10-01', '12-31'],
+  };
+  function overlapsQuarter(g, q, year) {
+    if (!q) return true;
+    const [qsMD, qeMD] = QUARTER_RANGES[q];
+    const qs = `${year}-${qsMD}`, qe = `${year}-${qeMD}`;
+    const gs = g.start_date || qs, ge = g.end_date || qe;
+    return gs <= qe && ge >= qs;
+  }
+
   function barColor(p) { return p >= 100 ? '#10B981' : p >= 50 ? '#3B82F6' : '#F59E0B'; }
 
   function badge(status) {
@@ -288,7 +316,7 @@
 
   // ---------- MEMBER VIEW ----------
   function renderMember() {
-    const mine = goals.filter(g => g.owner_id === session.user.id || g.owner_email === profile.email);
+    const mine = goals.filter(isMine);
     const main = $('#gm-main');
     main.innerHTML = `
       <h1>내 목표</h1>
@@ -296,7 +324,22 @@
       <div id="gm-member-list"></div>
     `;
     const list = $('#gm-member-list');
-    if (mine.length === 0) { list.innerHTML = '<div class="gm-empty">아직 배정된 목표가 없습니다.</div>'; return; }
+    if (mine.length === 0) {
+      const showNav = profile.org_role !== 'member';
+      list.innerHTML = `
+        <div class="gm-empty" style="padding:40px 0;">
+          <div>${profile.org_role === 'admin' ? '관리자 계정에는 개인 목표가 배정되어 있지 않습니다.' : '아직 배정된 목표가 없습니다.'}</div>
+          ${showNav ? `<div style="margin-top:14px;display:flex;gap:8px;justify-content:center;">
+            <button class="gm-btn" id="gm-goto-leader">팀 대시보드 보기</button>
+            <button class="gm-btn dark" id="gm-goto-exec">경영진 뷰 보기</button>
+          </div>` : ''}
+        </div>`;
+      if (showNav) {
+        $('#gm-goto-leader').addEventListener('click', () => { currentView = 'leader'; renderNav(); renderView(); });
+        $('#gm-goto-exec').addEventListener('click', () => { currentView = 'exec'; renderNav(); renderView(); });
+      }
+      return;
+    }
     list.innerHTML = mine.map(g => {
       const status = statusOf(g);
       return `
@@ -402,26 +445,31 @@
       </div>
       <div class="gm-toolbar">
         <input type="text" id="gm-search" placeholder="과제명 또는 담당자 검색..." />
+        <select id="gm-quarter-filter"><option value="">전체 기간</option><option value="1">1분기</option><option value="2">2분기</option><option value="3">3분기</option><option value="4">4분기</option></select>
         <select id="gm-status-filter"><option value="">전체 상태</option><option>진행중</option><option>지연</option><option>완료</option></select>
       </div>
       <div class="gm-card" style="padding:0;overflow:hidden;">
-        <div class="gm-table-head" style="padding:10px 16px;background:#F8FAFC;"><div>과제명</div><div>진척도</div><div></div><div>상태</div><div>기간</div></div>
+        <div class="gm-table-head" style="padding:10px 16px;background:#F8FAFC;"><div>과제명</div><div>진척도</div><div></div><div>상태</div><div>기간</div><div></div></div>
         <div id="gm-tree"></div>
       </div>
     `;
     renderTree(teamGoals);
     $('#gm-search').addEventListener('input', () => renderTree(teamGoals));
     $('#gm-status-filter').addEventListener('change', () => renderTree(teamGoals));
+    $('#gm-quarter-filter').addEventListener('change', () => renderTree(teamGoals));
   }
 
   function renderTree(list) {
     const q = ($('#gm-search') ? $('#gm-search').value : '').toLowerCase();
     const statusFilter = $('#gm-status-filter') ? $('#gm-status-filter').value : '';
+    const quarterFilter = $('#gm-quarter-filter') ? $('#gm-quarter-filter').value : '';
     const byParent = {};
     list.forEach(g => { (byParent[g.parent_id||'root'] = byParent[g.parent_id||'root']||[]).push(g); });
-    const matches = g => (!q || g.name.toLowerCase().includes(q) || (g.owner_email||'').toLowerCase().includes(q)) && (!statusFilter || statusOf(g)===statusFilter);
+    const matches = g => (!q || g.name.toLowerCase().includes(q) || (g.owner_email||'').toLowerCase().includes(q))
+      && (!statusFilter || statusOf(g)===statusFilter)
+      && overlapsQuarter(g, quarterFilter, 2025);
     // if searching/filtering, auto-expand everything with a match in subtree
-    const activeFilter = q || statusFilter;
+    const activeFilter = q || statusFilter || quarterFilter;
     function subtreeHasMatch(g) {
       if (matches(g)) return true;
       return (byParent[g.id]||[]).some(subtreeHasMatch);
@@ -443,11 +491,16 @@
       expanded.has(id) ? expanded.delete(id) : expanded.add(id);
       renderTree(list);
     }));
+    $all('[data-checkin]', $('#gm-tree')).forEach(b => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openCheckinModal(b.dataset.checkin);
+    }));
   }
 
   function renderRow(g, depth, hasChildren) {
     const status = statusOf(g);
     const toggle = hasChildren ? `<button class="gm-toggle" data-id="${g.id}" style="border:none;background:none;cursor:pointer;color:#94A3B8;">${expanded.has(g.id)?'▾':'▸'}</button>` : `<span style="display:inline-block;width:14px;"></span>`;
+    const action = isMine(g) ? `<button class="gm-btn" data-checkin="${g.id}" style="padding:3px 8px;font-size:11.5px;">체크인</button>` : '';
     return `<div class="gm-table-row" style="padding:9px 16px;">
       <div style="display:flex;align-items:center;gap:6px;padding-left:${depth*16}px;">
         ${toggle}<span style="font-weight:${depth===0?700:500};">${escapeHtml(g.name)}</span>
@@ -456,6 +509,7 @@
       <div style="font-size:12px;font-weight:600;">${g.cached_progress||0}%</div>
       <div>${badge(status)}</div>
       <div style="font-size:11.5px;color:#94A3B8;">~${(g.end_date||'').slice(5)}</div>
+      <div>${action}</div>
     </div>`;
   }
 
@@ -490,10 +544,11 @@
       <div class="gm-toolbar">
         <input type="text" id="gm-search" placeholder="과제명 또는 담당자 검색..." />
         <select id="gm-org-filter"><option value="">전체 조직</option>${Object.keys(orgs).map(o=>`<option>${o}</option>`).join('')}</select>
+        <select id="gm-quarter-filter"><option value="">전체 기간</option><option value="1">1분기</option><option value="2">2분기</option><option value="3">3분기</option><option value="4">4분기</option></select>
         <select id="gm-status-filter"><option value="">전체 상태</option><option>진행중</option><option>지연</option><option>완료</option></select>
       </div>
       <div class="gm-card" style="padding:0;overflow:hidden;">
-        <div class="gm-table-head" style="padding:10px 16px;background:#F8FAFC;"><div>과제명</div><div>진척도</div><div></div><div>상태</div><div>기간</div></div>
+        <div class="gm-table-head" style="padding:10px 16px;background:#F8FAFC;"><div>과제명</div><div>진척도</div><div></div><div>상태</div><div>기간</div><div></div></div>
         <div id="gm-tree"></div>
       </div>
       ${delayed.length ? `<div class="gm-card" style="background:#FEF2F2;border-color:#FECACA;">
@@ -520,6 +575,7 @@
     renderTree(filteredList);
     $('#gm-search').addEventListener('input', () => renderTree(filteredList));
     $('#gm-status-filter').addEventListener('change', () => renderTree(filteredList));
+    $('#gm-quarter-filter').addEventListener('change', () => renderTree(filteredList));
     $('#gm-org-filter').addEventListener('change', applyOrgFilter);
     $('#gm-export').addEventListener('click', () => exportCsv(top));
   }
