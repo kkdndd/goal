@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>대교홀딩스 목표관리 시스템</title>
+<style>html,body{margin:0;padding:0;height:100%;}</style>
+</head>
+<body>
+<style>
+  #gm-app * { box-sizing: border-box; }
+  #gm-app {
+    font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', -apple-system, sans-serif;
+    background: #F8FAFC; color: #0F172A; height: 100vh; display: flex; overflow: hidden;
+  }
+  #gm-app .hidden { display: none !important; }
+  #gm-app button { font-family: inherit; cursor: pointer; }
+  #gm-app input, #gm-app select, #gm-app textarea { font-family: inherit; }
+
+  /* ---- Login ---- */
+  #gm-login { width: 100%; display: flex; align-items: center; justify-content: center; padding: 40px; }
+  #gm-login .box { width: 360px; }
+  #gm-login .eyebrow { font-size: 12px; letter-spacing: 1px; color: #64748B; font-weight: 700; margin-bottom: 4px; }
+  #gm-login h1 { font-size: 20px; margin: 0 0 4px; }
+  #gm-login p.sub { color: #64748B; font-size: 13px; margin: 0 0 20px; }
+  #gm-login label { font-size: 12.5px; color: #334155; font-weight: 600; display: block; margin-bottom: 5px; margin-top: 14px; }
+  #gm-login input { width: 100%; padding: 9px 11px; border: 1px solid #CBD5E1; border-radius: 8px; font-size: 14px; }
+  #gm-login .actions { display: flex; gap: 8px; margin-top: 20px; }
+  #gm-login button.primary { flex: 1; background: #0F172A; color: #fff; border: none; border-radius: 8px; padding: 10px 0; font-weight: 600; font-size: 14px; }
+  #gm-login button.secondary { flex: 1; background: #fff; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 8px; padding: 10px 0; font-weight: 600; font-size: 14px; }
+  #gm-login .msg { font-size: 12.5px; margin-top: 12px; padding: 8px 10px; border-radius: 8px; }
+  #gm-login .msg.error { background: #FEF2F2; color: #B91C1C; }
+  #gm-login .msg.ok { background: #ECFDF5; color: #047857; }
+  #gm-login .hint { font-size: 11.5px; color: #94A3B8; margin-top: 16px; line-height: 1.5; }
+
+  /* ---- Sidebar ---- */
+  #gm-sidebar { width: 220px; background: #0F172A; color: #E2E8F0; padding: 18px 14px; display: flex; flex-direction: column; gap: 20px; flex-shrink: 0; }
+  #gm-sidebar .brand-eyebrow { font-size: 11px; letter-spacing: 1px; color: #64748B; font-weight: 700; }
+  #gm-sidebar .brand-title { font-size: 16px; font-weight: 700; margin-top: 2px; }
+  #gm-sidebar .nav-label { font-size: 10.5px; color: #64748B; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  #gm-sidebar .nav-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 9px; margin-bottom: 3px; border-radius: 8px; border: none; text-align: left; font-size: 13.5px; font-weight: 500; background: transparent; color: #94A3B8; }
+  #gm-sidebar .nav-btn.active { background: #1E293B; color: #F8FAFC; }
+  #gm-sidebar .who { margin-top: auto; padding: 10px; background: #1E293B; border-radius: 10px; }
+  #gm-sidebar .who .name { font-size: 13.5px; font-weight: 600; }
+  #gm-sidebar .who .role { font-size: 11.5px; color: #94A3B8; margin-top: 1px; }
+  #gm-sidebar .logout { font-size: 11.5px; color: #64748B; background: none; border: none; margin-top: 8px; text-align: left; padding: 0; }
+
+  /* ---- Main ---- */
+  #gm-main { flex: 1; padding: 22px 26px; overflow: auto; height: 100vh; }
+  #gm-main h1 { font-size: 20px; font-weight: 800; margin: 0 0 2px; }
+  #gm-main p.sub { color: #64748B; font-size: 13px; margin: 0 0 18px; }
+
+  .gm-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+  .gm-kpi { background: #fff; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px 16px; }
+  .gm-kpi .label { font-size: 11.5px; color: #64748B; font-weight: 600; margin-bottom: 5px; }
+  .gm-kpi .value { font-size: 21px; font-weight: 800; }
+
+  .gm-card { background: #fff; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  .gm-card .card-title { font-size: 12.5px; font-weight: 700; color: #334155; margin-bottom: 10px; }
+
+  .gm-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .gm-toolbar input[type=text] { flex: 1; padding: 8px 11px; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 13px; }
+  .gm-toolbar select { padding: 8px 10px; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 13px; background: #fff; }
+
+  .gm-bar-track { height: 8px; background: #E5E7EB; border-radius: 999px; overflow: hidden; width: 100%; }
+  .gm-bar-fill { height: 100%; border-radius: 999px; transition: width .3s; }
+
+  .gm-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+
+  .gm-table-row { display: grid; grid-template-columns: 1fr 100px 130px 84px 90px; align-items: center; padding: 9px 4px; border-bottom: 1px solid #F1F5F9; font-size: 13px; }
+  .gm-table-head { display: grid; grid-template-columns: 1fr 100px 130px 84px 90px; padding: 8px 4px; font-size: 11px; font-weight: 700; color: #64748B; border-bottom: 1px solid #E2E8F0; }
+
+  .gm-btn { padding: 6px 11px; border-radius: 7px; border: 1px solid #0F172A; background: #fff; color: #0F172A; font-size: 12.5px; font-weight: 600; }
+  .gm-btn.dark { background: #0F172A; color: #fff; }
+  .gm-btn.ghost { border-color: #E2E8F0; color: #475569; }
+
+  .gm-modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: flex; align-items: center; justify-content: center; z-index: 999; }
+  .gm-modal { background: #fff; border-radius: 14px; padding: 22px; width: 420px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  .gm-modal textarea { width: 100%; min-height: 78px; border: 1px solid #E2E8F0; border-radius: 8px; padding: 9px; font-size: 13px; resize: vertical; }
+
+  .gm-loading { padding: 60px 0; text-align: center; color: #94A3B8; font-size: 13px; }
+  .gm-empty { padding: 30px 0; text-align: center; color: #94A3B8; font-size: 13px; }
+
+  .gm-admin-row { display: grid; grid-template-columns: 1fr 1fr 140px 110px; gap: 8px; align-items: center; padding: 8px 4px; border-bottom: 1px solid #F1F5F9; font-size: 13px; }
+</style>
+
+<div id="gm-app">
+  <div id="gm-login">
+    <div class="box">
+      <div class="eyebrow">DAEKYO HOLDINGS</div>
+      <h1>목표관리 시스템</h1>
+      <p class="sub">사내 이메일(@daekyo.co.kr)로 로그인하세요.</p>
+
+      <label>이메일</label>
+      <input id="gm-email" type="text" placeholder="taesoo.lee@daekyo.co.kr" />
+      <label>비밀번호</label>
+      <input id="gm-password" type="password" placeholder="8자 이상" />
+
+      <div class="actions">
+        <button class="secondary" id="gm-signup-btn">가입하기</button>
+        <button class="primary" id="gm-signin-btn">로그인</button>
+      </div>
+      <div id="gm-login-msg"></div>
+      <div class="hint">처음이신가요? 가입하기를 누르면 사내 이메일 도메인 확인 후 계정이 생성됩니다. 기존에 진행하던 목표가 있다면 자동으로 연결됩니다.</div>
+    </div>
+  </div>
+
+  <div id="gm-shell" class="hidden" style="display:flex; width:100%;">
+    <div id="gm-sidebar">
+      <div>
+        <div class="brand-eyebrow">DAEKYO HOLDINGS</div>
+        <div class="brand-title">목표관리 대시보드</div>
+      </div>
+      <div>
+        <div class="nav-label">보기</div>
+        <button class="nav-btn" data-view="member">내 목표</button>
+        <button class="nav-btn" data-view="leader">팀 대시보드</button>
+        <button class="nav-btn" data-view="exec">경영진 뷰</button>
+        <button class="nav-btn hidden" id="gm-nav-admin" data-view="admin">관리자</button>
+      </div>
+      <div class="who">
+        <div class="name" id="gm-who-name">-</div>
+        <div class="role" id="gm-who-role">-</div>
+        <button class="logout" id="gm-logout-btn">로그아웃</button>
+      </div>
+    </div>
+    <div id="gm-main"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const SUPABASE_URL = "https://mizlmwiiiqncqzktjzzn.supabase.co";
+  const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1pemxtd2lpaXFuY3F6a3RqenpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODIwMTMsImV4cCI6MjA5ODU1ODAxM30.F3Q4CzfZ4d6hlLJsYRxeVLShcKuNdrZT6best6H3Eww";
+
+  let session = null;   // { access_token, user }
+  let profile = null;   // row from profiles
+  let goals = [];        // flattened goals with metrics + org name
+  let checkinsCache = {};
+  let currentView = 'member';
+  let expanded = new Set();
+
+  const $ = (sel, root) => (root||document).querySelector(sel);
+  const $all = (sel, root) => Array.from((root||document).querySelectorAll(sel));
+
+  async function api(path, opts) {
+    opts = opts || {};
+    const headers = Object.assign({
+      'apikey': ANON_KEY,
+      'Content-Type': 'application/json',
+    }, opts.headers || {});
+    if (session) headers['Authorization'] = 'Bearer ' + session.access_token;
+    const res = await fetch(SUPABASE_URL + path, Object.assign({}, opts, { headers }));
+    if (!res.ok) {
+      let body;
+      try { body = await res.json(); } catch(e) { body = { message: res.statusText }; }
+      throw new Error(body.error_description || body.msg || body.message || 'Request failed');
+    }
+    if (res.status === 204) return null;
+    return res.json();
+  }
+
+  // ---------- AUTH ----------
+  $('#gm-signup-btn').addEventListener('click', async () => {
+    const email = $('#gm-email').value.trim();
+    const password = $('#gm-password').value;
+    setLoginMsg('', '');
+    try {
+      await api('/auth/v1/signup', { method: 'POST', body: JSON.stringify({ email, password }) });
+      setLoginMsg('가입 완료! 로그인 버튼을 눌러주세요.', 'ok');
+    } catch (e) {
+      setLoginMsg(e.message.includes('daekyo.co.kr') ? '사내 이메일(@daekyo.co.kr)만 가입할 수 있습니다.' : e.message, 'error');
+    }
+  });
+
+  $('#gm-signin-btn').addEventListener('click', async () => {
+    const email = $('#gm-email').value.trim();
+    const password = $('#gm-password').value;
+    setLoginMsg('', '');
+    try {
+      const data = await api('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify({ email, password }) });
+      session = { access_token: data.access_token, user: data.user };
+      await afterLogin();
+    } catch (e) {
+      setLoginMsg('로그인 실패: ' + e.message, 'error');
+    }
+  });
+
+  $('#gm-logout-btn').addEventListener('click', () => {
+    session = null; profile = null; goals = [];
+    $('#gm-shell').classList.add('hidden');
+    $('#gm-login').classList.remove('hidden');
+  });
+
+  function setLoginMsg(text, kind) {
+    const el = $('#gm-login-msg');
+    el.textContent = text;
+    el.className = 'msg ' + (kind || '');
+  }
+
+  async function afterLogin() {
+    profile = (await api(`/rest/v1/profiles?id=eq.${session.user.id}&select=*`))[0];
+    $('#gm-login').classList.add('hidden');
+    $('#gm-shell').classList.remove('hidden');
+    $('#gm-who-name').textContent = profile.name;
+    $('#gm-who-role').textContent = roleLabel(profile.org_role);
+    if (profile.org_role === 'admin') $('#gm-nav-admin').classList.remove('hidden');
+    currentView = profile.org_role === 'member' ? 'member' : (profile.org_role === 'leader' ? 'leader' : 'exec');
+    await loadGoals();
+    renderNav();
+    renderView();
+  }
+
+  function roleLabel(r) {
+    return { member: '담당자', leader: '팀장', exec: '경영진', admin: '관리자' }[r] || r;
+  }
+
+  // ---------- DATA ----------
+  async function loadGoals() {
+    goals = await api('/rest/v1/goals?select=*,organizations(name),goal_metrics(*)&order=start_date.asc');
+  }
+
+  async function loadCheckins(goalId) {
+    if (checkinsCache[goalId]) return checkinsCache[goalId];
+    const rows = await api(`/rest/v1/goal_checkins?goal_id=eq.${goalId}&select=*,profiles(name)&order=created_at.desc`);
+    checkinsCache[goalId] = rows;
+    return rows;
+  }
+
+  function statusOf(g) {
+    const p = g.cached_progress || 0;
+    if (p >= 100) return '완료';
+    if (g.end_date && new Date(g.end_date) < new Date('2026-07-03')) return '지연';
+    return '진행중';
+  }
+  const STATUS_COLOR = { '완료': '#10B981', '진행중': '#3B82F6', '지연': '#EF4444' };
+  const STATUS_BG = { '완료': '#ECFDF5', '진행중': '#EFF6FF', '지연': '#FEF2F2' };
+  const STATUS_TEXT = { '완료': '#047857', '진행중': '#1D4ED8', '지연': '#B91C1C' };
+
+  function barColor(p) { return p >= 100 ? '#10B981' : p >= 50 ? '#3B82F6' : '#F59E0B'; }
+
+  function badge(status) {
+    return `<span class="gm-badge" style="background:${STATUS_BG[status]};color:${STATUS_TEXT[status]}">${status}</span>`;
+  }
+
+  function bar(p, h) {
+    h = h || 8;
+    return `<div class="gm-bar-track" style="height:${h}px"><div class="gm-bar-fill" style="width:${Math.min(p,100)}%;height:100%;background:${barColor(p)}"></div></div>`;
+  }
+
+  // ---------- NAV ----------
+  function renderNav() {
+    $all('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
+  }
+  $all('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
+    currentView = btn.dataset.view;
+    renderNav();
+    renderView();
+  }));
+
+  function renderView() {
+    if (currentView === 'member') renderMember();
+    else if (currentView === 'leader') renderLeader();
+    else if (currentView === 'exec') renderExec();
+    else if (currentView === 'admin') renderAdmin();
+  }
+
+  // ---------- MEMBER VIEW ----------
+  function renderMember() {
+    const mine = goals.filter(g => g.owner_id === session.user.id || g.owner_email === profile.email);
+    const main = $('#gm-main');
+    main.innerHTML = `
+      <h1>내 목표</h1>
+      <p class="sub">담당하고 있는 목표의 진척도를 직접 입력하고 이력을 확인합니다.</p>
+      <div id="gm-member-list"></div>
+    `;
+    const list = $('#gm-member-list');
+    if (mine.length === 0) { list.innerHTML = '<div class="gm-empty">아직 배정된 목표가 없습니다.</div>'; return; }
+    list.innerHTML = mine.map(g => {
+      const status = statusOf(g);
+      return `
+      <div class="gm-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <span style="font-size:11px;color:#94A3B8;background:#F1F5F9;padding:2px 6px;border-radius:5px;font-weight:600;">${g.goal_type}</span>
+              ${badge(status)}
+            </div>
+            <div style="font-size:15px;font-weight:700;">${escapeHtml(g.name)}</div>
+            <div style="font-size:12px;color:#94A3B8;margin-top:2px;">${g.organizations ? g.organizations.name : ''} · ${g.start_date||''} ~ ${g.end_date||''}</div>
+          </div>
+          <button class="gm-btn" data-checkin="${g.id}">체크인 입력</button>
+        </div>
+        <div style="margin-top:12px;display:flex;align-items:center;gap:10px;">
+          <div style="flex:1">${bar(g.cached_progress||0)}</div>
+          <div style="font-size:13px;font-weight:700;width:36px;text-align:right;">${g.cached_progress||0}%</div>
+        </div>
+        <div class="gm-checkin-history" data-goal="${g.id}" style="margin-top:10px;font-size:12.5px;color:#475569;"></div>
+      </div>`;
+    }).join('');
+    $all('[data-checkin]', list).forEach(b => b.addEventListener('click', () => openCheckinModal(b.dataset.checkin)));
+    $all('.gm-checkin-history', list).forEach(async el => {
+      const rows = await loadCheckins(el.dataset.goal);
+      el.innerHTML = rows.slice(0,2).map(c => `<div><b>${(c.created_at||'').slice(0,10)}</b> · 진척도 ${c.progress_snapshot}% — ${escapeHtml(c.comment||'')}</div>`).join('');
+    });
+  }
+
+  function escapeHtml(s) { return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  // ---------- CHECK-IN MODAL ----------
+  function openCheckinModal(goalId) {
+    const g = goals.find(x => x.id === goalId);
+    const backdrop = document.createElement('div');
+    backdrop.className = 'gm-modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="gm-modal">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div>
+            <div style="font-size:12px;color:#64748B;font-weight:600;">진척도 체크인</div>
+            <div style="font-size:16px;font-weight:700;margin-top:2px;">${escapeHtml(g.name)}</div>
+          </div>
+          <button id="gm-modal-close" style="border:none;background:none;color:#94A3B8;font-size:16px;">✕</button>
+        </div>
+        <div style="margin-top:16px;">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+            <span style="color:#475569;">진척도</span><span id="gm-progress-val" style="font-weight:700;">${g.cached_progress||0}%</span>
+          </div>
+          <input id="gm-progress-range" type="range" min="0" max="100" value="${g.cached_progress||0}" style="width:100%;" />
+          <div id="gm-progress-bar">${bar(g.cached_progress||0, 10)}</div>
+        </div>
+        <div style="margin-top:16px;">
+          <div style="font-size:13px;color:#475569;margin-bottom:6px;">진행 코멘트</div>
+          <textarea id="gm-comment" placeholder="이번 진행 상황을 기록하세요."></textarea>
+        </div>
+        <button id="gm-submit-checkin" class="gm-btn dark" style="width:100%;margin-top:14px;padding:10px 0;">체크인 저장</button>
+        <div id="gm-checkin-err" style="color:#B91C1C;font-size:12px;margin-top:8px;"></div>
+      </div>`;
+    document.body.appendChild(backdrop);
+    const range = $('#gm-progress-range', backdrop);
+    range.addEventListener('input', () => {
+      $('#gm-progress-val', backdrop).textContent = range.value + '%';
+      $('#gm-progress-bar', backdrop).innerHTML = bar(Number(range.value), 10);
+    });
+    $('#gm-modal-close', backdrop).addEventListener('click', () => backdrop.remove());
+    $('#gm-submit-checkin', backdrop).addEventListener('click', async () => {
+      const p = Number(range.value);
+      const comment = $('#gm-comment', backdrop).value;
+      try {
+        await api('/rest/v1/goal_checkins', { method: 'POST', body: JSON.stringify({ goal_id: g.id, author_id: session.user.id, progress_snapshot: p, comment }) });
+        await api(`/rest/v1/goals?id=eq.${g.id}`, { method: 'PATCH', body: JSON.stringify({ cached_progress: p }) });
+        if (g.goal_metrics && g.goal_metrics.length) {
+          await api(`/rest/v1/goal_metrics?goal_id=eq.${g.id}`, { method: 'PATCH', body: JSON.stringify({ current_value: p }) });
+        }
+        delete checkinsCache[g.id];
+        g.cached_progress = p;
+        backdrop.remove();
+        renderView();
+      } catch (e) {
+        $('#gm-checkin-err', backdrop).textContent = '저장 실패: ' + e.message;
+      }
+    });
+  }
+
+  // ---------- LEADER VIEW ----------
+  function renderLeader() {
+    const orgName = profile.org_id ? (goals.find(g => g.org_id === profile.org_id)?.organizations?.name) : null;
+    const teamGoals = goals.filter(g => g.org_id === profile.org_id);
+    const top = teamGoals.filter(g => !g.parent_id);
+    const avg = top.length ? Math.round(top.reduce((s,g)=>s+(g.cached_progress||0),0)/top.length) : 0;
+    const delayed = teamGoals.filter(g => statusOf(g) === '지연').length;
+
+    const main = $('#gm-main');
+    main.innerHTML = `
+      <h1>${orgName || '팀'} 대시보드</h1>
+      <p class="sub">팀 전체 목표 트리와 진척 현황입니다.</p>
+      <div class="gm-kpi-row">
+        <div class="gm-kpi"><div class="label">대과제 평균 진척률</div><div class="value">${avg}%</div></div>
+        <div class="gm-kpi"><div class="label">지연 항목</div><div class="value" style="color:${delayed>0?'#EF4444':'#10B981'}">${delayed}건</div></div>
+        <div class="gm-kpi"><div class="label">관리 대과제 수</div><div class="value">${top.length}건</div></div>
+        <div class="gm-kpi"><div class="label">총 과제 수</div><div class="value">${teamGoals.length}건</div></div>
+      </div>
+      <div class="gm-toolbar">
+        <input type="text" id="gm-search" placeholder="과제명 또는 담당자 검색..." />
+        <select id="gm-status-filter"><option value="">전체 상태</option><option>진행중</option><option>지연</option><option>완료</option></select>
+      </div>
+      <div class="gm-card" style="padding:0;overflow:hidden;">
+        <div class="gm-table-head" style="padding:10px 16px;background:#F8FAFC;"><div>과제명</div><div>진척도</div><div></div><div>상태</div><div>기간</div></div>
+        <div id="gm-tree"></div>
+      </div>
+    `;
+    renderTree(teamGoals);
+    $('#gm-search').addEventListener('input', () => renderTree(teamGoals));
+    $('#gm-status-filter').addEventListener('change', () => renderTree(teamGoals));
+  }
+
+  function renderTree(list) {
+    const q = ($('#gm-search') ? $('#gm-search').value : '').toLowerCase();
+    const statusFilter = $('#gm-status-filter') ? $('#gm-status-filter').value : '';
+    const byParent = {};
+    list.forEach(g => { (byParent[g.parent_id||'root'] = byParent[g.parent_id||'root']||[]).push(g); });
+    const matches = g => (!q || g.name.toLowerCase().includes(q) || (g.owner_email||'').toLowerCase().includes(q)) && (!statusFilter || statusOf(g)===statusFilter);
+    // if searching/filtering, auto-expand everything with a match in subtree
+    const activeFilter = q || statusFilter;
+    function subtreeHasMatch(g) {
+      if (matches(g)) return true;
+      return (byParent[g.id]||[]).some(subtreeHasMatch);
+    }
+    let rows = [];
+    function walk(parent, depth) {
+      (byParent[parent]||[]).forEach(g => {
+        const has = subtreeHasMatch(g);
+        if (activeFilter && !has) return;
+        rows.push(renderRow(g, depth, byParent[g.id] && byParent[g.id].length > 0));
+        if (expanded.has(g.id) || activeFilter) walk(g.id, depth+1);
+      });
+    }
+    walk('root', 0);
+    $('#gm-tree').innerHTML = rows.join('') || '<div class="gm-empty">조건에 맞는 과제가 없습니다.</div>';
+    $all('.gm-toggle', $('#gm-tree')).forEach(b => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = b.dataset.id;
+      expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+      renderTree(list);
+    }));
+  }
+
+  function renderRow(g, depth, hasChildren) {
+    const status = statusOf(g);
+    const toggle = hasChildren ? `<button class="gm-toggle" data-id="${g.id}" style="border:none;background:none;cursor:pointer;color:#94A3B8;">${expanded.has(g.id)?'▾':'▸'}</button>` : `<span style="display:inline-block;width:14px;"></span>`;
+    return `<div class="gm-table-row" style="padding:9px 16px;">
+      <div style="display:flex;align-items:center;gap:6px;padding-left:${depth*16}px;">
+        ${toggle}<span style="font-weight:${depth===0?700:500};">${escapeHtml(g.name)}</span>
+      </div>
+      <div>${bar(g.cached_progress||0,6)}</div>
+      <div style="font-size:12px;font-weight:600;">${g.cached_progress||0}%</div>
+      <div>${badge(status)}</div>
+      <div style="font-size:11.5px;color:#94A3B8;">~${(g.end_date||'').slice(5)}</div>
+    </div>`;
+  }
+
+  // ---------- EXEC VIEW ----------
+  function renderExec() {
+    const top = goals.filter(g => !g.parent_id);
+    const orgs = {};
+    top.forEach(g => {
+      const on = g.organizations ? g.organizations.name : '미지정';
+      (orgs[on] = orgs[on] || []).push(g);
+    });
+    const avg = top.length ? Math.round(top.reduce((s,g)=>s+(g.cached_progress||0),0)/top.length) : 0;
+    const delayed = goals.filter(g => statusOf(g)==='지연');
+    const noCheckinLeaf = goals.filter(g => !goals.some(c => c.parent_id === g.id) && (g.cached_progress||0) < 100);
+
+    const main = $('#gm-main');
+    main.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;">
+        <div><h1>전사 경영 대시보드</h1><p class="sub" style="margin:0;">2025년 전략과제 추진 현황</p></div>
+        <button class="gm-btn dark" id="gm-export">월간 리포트 CSV 다운로드</button>
+      </div>
+      <div class="gm-kpi-row">
+        <div class="gm-kpi"><div class="label">전사 평균 진척률</div><div class="value">${avg}%</div></div>
+        <div class="gm-kpi"><div class="label">지연 과제</div><div class="value" style="color:${delayed.length>0?'#EF4444':'#10B981'}">${delayed.length}건</div></div>
+        <div class="gm-kpi"><div class="label">대과제 수</div><div class="value">${top.length}건</div></div>
+        <div class="gm-kpi"><div class="label">총 세부과제 수</div><div class="value">${goals.length}건</div></div>
+      </div>
+      <div class="gm-card">
+        <div class="card-title">조직별 평균 진척률</div>
+        <div id="gm-org-chart"></div>
+      </div>
+      <div class="gm-toolbar">
+        <input type="text" id="gm-search" placeholder="과제명 또는 담당자 검색..." />
+        <select id="gm-org-filter"><option value="">전체 조직</option>${Object.keys(orgs).map(o=>`<option>${o}</option>`).join('')}</select>
+        <select id="gm-status-filter"><option value="">전체 상태</option><option>진행중</option><option>지연</option><option>완료</option></select>
+      </div>
+      <div class="gm-card" style="padding:0;overflow:hidden;">
+        <div class="gm-table-head" style="padding:10px 16px;background:#F8FAFC;"><div>과제명</div><div>진척도</div><div></div><div>상태</div><div>기간</div></div>
+        <div id="gm-tree"></div>
+      </div>
+      ${delayed.length ? `<div class="gm-card" style="background:#FEF2F2;border-color:#FECACA;">
+        <div class="card-title" style="color:#B91C1C;">⚠ 경영진 확인 필요 — 지연 과제</div>
+        ${delayed.slice(0,10).map(g=>`<div style="font-size:13px;color:#7F1D1D;padding:3px 0;">· ${g.organizations?g.organizations.name:''} — ${escapeHtml(g.name)} (진척도 ${g.cached_progress||0}%, 종료예정 ${g.end_date||'-'})</div>`).join('')}
+      </div>` : ''}
+    `;
+    // org bar chart (custom, no external lib)
+    const chart = $('#gm-org-chart');
+    const orgAvg = Object.entries(orgs).map(([name, list]) => ({ name, avg: Math.round(list.reduce((s,g)=>s+(g.cached_progress||0),0)/list.length) }));
+    chart.innerHTML = orgAvg.map(o => `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <div style="width:110px;font-size:12.5px;color:#334155;">${o.name}</div>
+        <div style="flex:1">${bar(o.avg, 14)}</div>
+        <div style="width:38px;font-size:12.5px;font-weight:700;text-align:right;">${o.avg}%</div>
+      </div>`).join('');
+
+    let filteredList = goals;
+    function applyOrgFilter() {
+      const of = $('#gm-org-filter').value;
+      filteredList = of ? goals.filter(g => g.organizations && g.organizations.name === of) : goals;
+      renderTree(filteredList);
+    }
+    renderTree(filteredList);
+    $('#gm-search').addEventListener('input', () => renderTree(filteredList));
+    $('#gm-status-filter').addEventListener('change', () => renderTree(filteredList));
+    $('#gm-org-filter').addEventListener('change', applyOrgFilter);
+    $('#gm-export').addEventListener('click', () => exportCsv(top));
+  }
+
+  function exportCsv(rows) {
+    const header = ['담당조직','과제명','진척도','상태','시작일','종료일'];
+    const lines = [header.join(',')].concat(rows.map(g => [
+      g.organizations?g.organizations.name:'', `"${(g.name||'').replace(/"/g,'""')}"`, g.cached_progress||0, statusOf(g), g.start_date||'', g.end_date||''
+    ].join(',')));
+    const blob = new Blob(["\uFEFF"+lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '월간_진척현황.csv';
+    a.click();
+  }
+
+  // ---------- ADMIN VIEW ----------
+  async function renderAdmin() {
+    const main = $('#gm-main');
+    main.innerHTML = `
+      <h1>관리자</h1>
+      <p class="sub">구성원 권한과 조직을 관리합니다.</p>
+      <div class="gm-card">
+        <div class="card-title">가입된 구성원</div>
+        <div class="gm-admin-row" style="font-weight:700;color:#64748B;font-size:11.5px;"><div>이름</div><div>이메일</div><div>조직</div><div>역할</div></div>
+        <div id="gm-admin-list" class="gm-loading">불러오는 중...</div>
+      </div>
+    `;
+    try {
+      const [profiles, orgs] = await Promise.all([
+        api('/rest/v1/profiles?select=*&order=name.asc'),
+        api('/rest/v1/organizations?select=*')
+      ]);
+      const list = $('#gm-admin-list');
+      list.className = '';
+      list.innerHTML = profiles.map(p => `
+        <div class="gm-admin-row" data-id="${p.id}">
+          <div>${escapeHtml(p.name)}</div>
+          <div style="color:#64748B;font-size:12px;">${p.email}</div>
+          <div>${orgs.find(o=>o.id===p.org_id)?.name || '-'}</div>
+          <select class="gm-role-select" data-id="${p.id}">
+            ${['member','leader','exec','admin'].map(r=>`<option value="${r}" ${r===p.org_role?'selected':''}>${roleLabel(r)}</option>`).join('')}
+          </select>
+        </div>`).join('');
+      $all('.gm-role-select', list).forEach(sel => sel.addEventListener('change', async () => {
+        try {
+          await api(`/rest/v1/profiles?id=eq.${sel.dataset.id}`, { method: 'PATCH', body: JSON.stringify({ org_role: sel.value }) });
+        } catch (e) { alert('변경 실패: ' + e.message); }
+      }));
+    } catch (e) {
+      $('#gm-admin-list').textContent = '불러오기 실패: ' + e.message;
+    }
+  }
+
+})();
+</script>
+
+</body>
+</html>
