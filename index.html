@@ -116,6 +116,7 @@
         <button class="nav-btn" data-view="member">내 목표</button>
         <button class="nav-btn" data-view="leader">팀 대시보드</button>
         <button class="nav-btn" data-view="exec">경영진 뷰</button>
+        <button class="nav-btn" data-view="history">연도별 이력</button>
         <button class="nav-btn hidden" id="gm-nav-admin" data-view="admin">관리자</button>
       </div>
       <div class="who">
@@ -139,6 +140,9 @@
   let checkinsCache = {};
   let currentView = 'member';
   let expanded = new Set();
+  let cycles = [];        // goal_cycles rows
+  let periodLocks = [];   // period_locks rows
+  let historyYear = null;
 
   const $ = (sel, root) => (root||document).querySelector(sel);
   const $all = (sel, root) => Array.from((root||document).querySelectorAll(sel));
@@ -208,7 +212,7 @@
     $('#gm-who-name').textContent = profile.name;
     $('#gm-who-role').textContent = roleLabel(profile.org_role);
     if (profile.org_role === 'admin') $('#gm-nav-admin').classList.remove('hidden');
-    await loadGoals();
+    await Promise.all([loadGoals(), loadCyclesAndLocks()]);
     // 본인 소유 목표가 있으면 역할과 무관하게 "내 목표"부터 보여줌 (관리자/팀장이라도 담당 업무가 있을 수 있음)
     const mine = goals.filter(isMine);
     currentView = mine.length > 0 ? 'member' : (profile.org_role === 'leader' ? 'leader' : (profile.org_role === 'member' ? 'member' : 'exec'));
@@ -247,7 +251,19 @@
 
   // ---------- DATA ----------
   async function loadGoals() {
-    goals = await api('/rest/v1/goals?select=*,organizations(name),goal_metrics(*)&order=start_date.asc');
+    goals = await api('/rest/v1/goals?select=*,organizations(name),goal_metrics(*),goal_cycles(year,name)&order=start_date.asc');
+  }
+
+  async function loadCyclesAndLocks() {
+    [cycles, periodLocks] = await Promise.all([
+      api('/rest/v1/goal_cycles?select=*&order=year.desc'),
+      api('/rest/v1/period_locks?select=*'),
+    ]);
+    if (!historyYear && cycles.length) historyYear = cycles.find(c => c.is_active)?.year || cycles[0].year;
+  }
+
+  function isMonthLocked(periodKey) {
+    return periodLocks.some(l => l.period_type === 'month' && l.period_key === periodKey);
   }
 
   async function loadCheckins(goalId) {
@@ -311,6 +327,7 @@
     if (currentView === 'member') renderMember();
     else if (currentView === 'leader') renderLeader();
     else if (currentView === 'exec') renderExec();
+    else if (currentView === 'history') renderHistory();
     else if (currentView === 'admin') renderAdmin();
   }
 
@@ -397,7 +414,15 @@
           <div style="font-size:13px;font-weight:700;width:36px;text-align:right;">${g.cached_progress||0}%</div>
         </div>
 
-        ${mineFlag ? `
+        ${mineFlag ? (() => {
+          const now = new Date();
+          const curKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+          if (isMonthLocked(curKey)) {
+            return `<div style="margin-top:18px;padding-top:16px;border-top:1px solid #F1F5F9;">
+              <div style="background:#FEF2F2;color:#B91C1C;border-radius:8px;padding:10px;font-size:12.5px;">🔒 이번 달(${curKey})은 관리자에 의해 마감되어 새 체크인을 입력할 수 없습니다. 문의가 필요하면 관리자에게 연락해주세요.</div>
+            </div>`;
+          }
+          return `
         <div style="margin-top:18px;padding-top:16px;border-top:1px solid #F1F5F9;">
           <div style="font-size:12.5px;font-weight:700;color:#334155;margin-bottom:8px;">새 체크인 입력</div>
           <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
@@ -408,7 +433,8 @@
           <textarea id="gm-comment" placeholder="이번 진행 상황을 기록하세요." style="margin-top:10px;"></textarea>
           <button id="gm-submit-checkin" class="gm-btn dark" style="width:100%;margin-top:10px;padding:10px 0;">체크인 저장</button>
           <div id="gm-checkin-err" style="color:#B91C1C;font-size:12px;margin-top:8px;"></div>
-        </div>` : ''}
+        </div>`;
+        })() : ''}
 
         <div style="margin-top:18px;padding-top:16px;border-top:1px solid #F1F5F9;">
           <div style="font-size:12.5px;font-weight:700;color:#334155;margin-bottom:8px;">전체 체크인 이력 (평가 참고 자료)</div>
@@ -434,6 +460,7 @@
 
     if (!mineFlag) return;
     const range = $('#gm-progress-range', backdrop);
+    if (!range) return; // 이번 달이 마감되어 입력 폼이 렌더링되지 않은 경우
     range.addEventListener('input', () => {
       $('#gm-progress-val', backdrop).textContent = range.value + '%';
       $('#gm-progress-bar', backdrop).innerHTML = bar(Number(range.value), 10);
@@ -452,7 +479,8 @@
         backdrop.remove();
         renderView();
       } catch (e) {
-        $('#gm-checkin-err', backdrop).textContent = '저장 실패: ' + e.message;
+        const msg = e.message.includes('row-level security') ? '이 기간은 마감되었거나 권한이 없어 저장할 수 없습니다.' : ('저장 실패: ' + e.message);
+        $('#gm-checkin-err', backdrop).textContent = msg;
       }
     });
   }
@@ -624,18 +652,115 @@
     a.click();
   }
 
+  // ---------- YEARLY HISTORY VIEW ----------
+  const MONTH_NAMES = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+
+  async function renderHistory() {
+    const main = $('#gm-main');
+    main.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;">
+        <div><h1>연도별 이력</h1><p class="sub" style="margin:0;">연도(사이클)별 목표 수립 현황과 월별 체크인 기록입니다.</p></div>
+        <select id="gm-history-year">${cycles.map(c=>`<option value="${c.year}" ${c.year===historyYear?'selected':''}>${c.name}</option>`).join('')}</select>
+      </div>
+      <div id="gm-history-body" class="gm-loading">불러오는 중...</div>
+    `;
+    $('#gm-history-year').addEventListener('change', (e) => { historyYear = Number(e.target.value); renderHistory(); });
+
+    const body = $('#gm-history-body');
+    const cycleGoals = goals.filter(g => g.goal_cycles && g.goal_cycles.year === historyYear);
+    const top = cycleGoals.filter(g => !g.parent_id);
+    const avg = top.length ? Math.round(top.reduce((s,g)=>s+(g.cached_progress||0),0)/top.length) : 0;
+
+    let checkins = [];
+    try {
+      checkins = await api('/rest/v1/goal_checkins?select=*,profiles(name),goals(name,goal_cycles(year))&order=created_at.desc');
+      checkins = checkins.filter(c => c.goals && c.goals.goal_cycles && c.goals.goal_cycles.year === historyYear);
+    } catch (e) { /* ignore, RLS로 걸러진 것일 수 있음 */ }
+
+    const monthCells = Array.from({length:12}, (_, i) => {
+      const mm = String(i+1).padStart(2,'0');
+      const pkey = `${historyYear}-${mm}`;
+      const count = checkins.filter(c => c.period_key === pkey).length;
+      const locked = isMonthLocked(pkey);
+      return `<div style="border:1px solid #E2E8F0;border-radius:10px;padding:10px;text-align:center;background:${locked?'#F8FAFC':'#fff'};">
+        <div style="font-size:12px;font-weight:700;color:#334155;">${MONTH_NAMES[i]}</div>
+        <div style="font-size:11px;color:#94A3B8;margin-top:3px;">체크인 ${count}건</div>
+        <div style="margin-top:4px;font-size:11px;font-weight:600;color:${locked?'#B91C1C':'#10B981'};">${locked?'🔒 마감됨':'진행중'}</div>
+      </div>`;
+    }).join('');
+
+    body.className = '';
+    body.innerHTML = `
+      <div class="gm-kpi-row">
+        <div class="gm-kpi"><div class="label">${historyYear}년 대과제 평균 진척률</div><div class="value">${avg}%</div></div>
+        <div class="gm-kpi"><div class="label">대과제 수</div><div class="value">${top.length}건</div></div>
+        <div class="gm-kpi"><div class="label">총 세부과제 수</div><div class="value">${cycleGoals.length}건</div></div>
+        <div class="gm-kpi"><div class="label">총 체크인 건수</div><div class="value">${checkins.length}건</div></div>
+      </div>
+      <div class="gm-card">
+        <div class="card-title">월별 현황</div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;">${monthCells}</div>
+      </div>
+      <div class="gm-card">
+        <div class="card-title">체크인 전체 이력 (최신순)</div>
+        <div id="gm-history-feed" style="max-height:420px;overflow:auto;">
+          ${checkins.length ? checkins.map(c => `
+            <div style="padding:8px 0;border-bottom:1px solid #F8FAFC;font-size:12.5px;">
+              <div style="display:flex;justify-content:space-between;">
+                <div><b>${escapeHtml(c.profiles?.name||'-')}</b> · ${escapeHtml(c.goals?.name||'')}</div>
+                <span style="color:#94A3B8;">${(c.created_at||'').slice(0,16).replace('T',' ')}</span>
+              </div>
+              <div style="color:#475569;margin-top:2px;">진척도 ${c.progress_snapshot}% — ${escapeHtml(c.comment||'(코멘트 없음)')}</div>
+            </div>`).join('') : '<div class="gm-empty">이 연도에는 아직 체크인 기록이 없습니다.</div>'}
+        </div>
+      </div>
+    `;
+  }
+
   // ---------- ADMIN VIEW ----------
   async function renderAdmin() {
     const main = $('#gm-main');
+    const activeCycle = cycles.find(c => c.is_active) || cycles[0];
+    const monthLockRows = activeCycle ? Array.from({length:12}, (_, i) => {
+      const mm = String(i+1).padStart(2,'0');
+      const pkey = `${activeCycle.year}-${mm}`;
+      const locked = isMonthLocked(pkey);
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 4px;border-bottom:1px solid #F8FAFC;font-size:13px;">
+        <div>${activeCycle.year}년 ${MONTH_NAMES[i]}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="gm-badge" style="background:${locked?'#FEF2F2':'#ECFDF5'};color:${locked?'#B91C1C':'#047857'}">${locked?'🔒 마감됨':'진행중'}</span>
+          <button class="gm-btn ${locked?'ghost':'dark'}" data-lock-key="${pkey}" data-lock-action="${locked?'unlock':'lock'}" style="padding:4px 10px;font-size:12px;">${locked?'마감 취소':'마감하기'}</button>
+        </div>
+      </div>`;
+    }).join('') : '<div class="gm-empty">활성 사이클이 없습니다.</div>';
+
     main.innerHTML = `
       <h1>관리자</h1>
-      <p class="sub">구성원 권한과 조직을 관리합니다.</p>
+      <p class="sub">구성원 권한, 조직, 월별 마감을 관리합니다.</p>
+      <div class="gm-card">
+        <div class="card-title">월별 마감 관리 ${activeCycle ? `(${activeCycle.name})` : ''}</div>
+        <p style="font-size:12px;color:#94A3B8;margin:-4px 0 10px;">마감된 달에는 구성원이 새로운 체크인을 입력할 수 없습니다. 이미 저장된 체크인 기록은 원래부터 수정·삭제가 불가능합니다.</p>
+        ${monthLockRows}
+      </div>
       <div class="gm-card">
         <div class="card-title">가입된 구성원</div>
         <div class="gm-admin-row" style="font-weight:700;color:#64748B;font-size:11.5px;"><div>이름</div><div>이메일</div><div>조직</div><div>역할</div></div>
         <div id="gm-admin-list" class="gm-loading">불러오는 중...</div>
       </div>
     `;
+    $all('[data-lock-key]', main).forEach(btn => btn.addEventListener('click', async () => {
+      const pkey = btn.dataset.lockKey;
+      const action = btn.dataset.lockAction;
+      try {
+        if (action === 'lock') {
+          await api('/rest/v1/period_locks', { method: 'POST', body: JSON.stringify({ cycle_id: activeCycle.id, period_type: 'month', period_key: pkey, locked_by: session.user.id }) });
+        } else {
+          await api(`/rest/v1/period_locks?period_type=eq.month&period_key=eq.${pkey}`, { method: 'DELETE' });
+        }
+        await loadCyclesAndLocks();
+        renderAdmin();
+      } catch (e) { alert('처리 실패: ' + e.message); }
+    }));
     try {
       const [profiles, orgs] = await Promise.all([
         api('/rest/v1/profiles?select=*&order=name.asc'),
