@@ -350,10 +350,10 @@
               <span style="font-size:11px;color:#94A3B8;background:#F1F5F9;padding:2px 6px;border-radius:5px;font-weight:600;">${g.goal_type}</span>
               ${badge(status)}
             </div>
-            <div style="font-size:15px;font-weight:700;">${escapeHtml(g.name)}</div>
+            <div style="font-size:15px;font-weight:700;cursor:pointer;" data-checkin="${g.id}">${escapeHtml(g.name)}</div>
             <div style="font-size:12px;color:#94A3B8;margin-top:2px;">${g.organizations ? g.organizations.name : ''} · ${g.start_date||''} ~ ${g.end_date||''}</div>
           </div>
-          <button class="gm-btn" data-checkin="${g.id}">체크인 입력</button>
+          <button class="gm-btn" data-checkin="${g.id}">체크인 / 이력보기</button>
         </div>
         <div style="margin-top:12px;display:flex;align-items:center;gap:10px;">
           <div style="flex:1">${bar(g.cached_progress||0)}</div>
@@ -365,47 +365,79 @@
     $all('[data-checkin]', list).forEach(b => b.addEventListener('click', () => openCheckinModal(b.dataset.checkin)));
     $all('.gm-checkin-history', list).forEach(async el => {
       const rows = await loadCheckins(el.dataset.goal);
-      el.innerHTML = rows.slice(0,2).map(c => `<div><b>${(c.created_at||'').slice(0,10)}</b> · 진척도 ${c.progress_snapshot}% — ${escapeHtml(c.comment||'')}</div>`).join('');
+      if (!rows.length) { el.innerHTML = ''; return; }
+      const last = rows[0];
+      el.innerHTML = `<div><b>${(last.created_at||'').slice(0,10)}</b> · 진척도 ${last.progress_snapshot}% — ${escapeHtml(last.comment||'')}</div>` +
+        (rows.length > 1 ? `<div style="margin-top:4px;color:#94A3B8;cursor:pointer;" data-checkin="${el.dataset.goal}">지난 이력 ${rows.length-1}건 더보기 →</div>` : '');
+      $all('[data-checkin]', el).forEach(b => b.addEventListener('click', () => openCheckinModal(b.dataset.checkin)));
     });
   }
 
   function escapeHtml(s) { return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-  // ---------- CHECK-IN MODAL ----------
-  function openCheckinModal(goalId) {
+  // ---------- GOAL DETAIL / CHECK-IN MODAL ----------
+  async function openCheckinModal(goalId) {
     const g = goals.find(x => x.id === goalId);
+    const mineFlag = isMine(g);
     const backdrop = document.createElement('div');
     backdrop.className = 'gm-modal-backdrop';
     backdrop.innerHTML = `
-      <div class="gm-modal">
+      <div class="gm-modal" style="max-height:85vh;overflow:auto;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
           <div>
-            <div style="font-size:12px;color:#64748B;font-weight:600;">진척도 체크인</div>
+            <div style="font-size:12px;color:#64748B;font-weight:600;">${g.organizations?g.organizations.name:''} · ${g.goal_type}</div>
             <div style="font-size:16px;font-weight:700;margin-top:2px;">${escapeHtml(g.name)}</div>
+            <div style="font-size:12px;color:#94A3B8;margin-top:2px;">${g.start_date||''} ~ ${g.end_date||''}${g.owner_email ? ' · 담당: ' + g.owner_email : ''}</div>
           </div>
           <button id="gm-modal-close" style="border:none;background:none;color:#94A3B8;font-size:16px;">✕</button>
         </div>
-        <div style="margin-top:16px;">
+        ${g.description ? `<div style="margin-top:12px;font-size:12.5px;color:#475569;background:#F8FAFC;border-radius:8px;padding:10px;white-space:pre-wrap;">${escapeHtml(g.description)}</div>` : ''}
+        <div style="margin-top:16px;display:flex;align-items:center;gap:10px;">
+          <div style="flex:1">${bar(g.cached_progress||0, 10)}</div>
+          <div style="font-size:13px;font-weight:700;width:36px;text-align:right;">${g.cached_progress||0}%</div>
+        </div>
+
+        ${mineFlag ? `
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid #F1F5F9;">
+          <div style="font-size:12.5px;font-weight:700;color:#334155;margin-bottom:8px;">새 체크인 입력</div>
           <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
             <span style="color:#475569;">진척도</span><span id="gm-progress-val" style="font-weight:700;">${g.cached_progress||0}%</span>
           </div>
           <input id="gm-progress-range" type="range" min="0" max="100" value="${g.cached_progress||0}" style="width:100%;" />
           <div id="gm-progress-bar">${bar(g.cached_progress||0, 10)}</div>
+          <textarea id="gm-comment" placeholder="이번 진행 상황을 기록하세요." style="margin-top:10px;"></textarea>
+          <button id="gm-submit-checkin" class="gm-btn dark" style="width:100%;margin-top:10px;padding:10px 0;">체크인 저장</button>
+          <div id="gm-checkin-err" style="color:#B91C1C;font-size:12px;margin-top:8px;"></div>
+        </div>` : ''}
+
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid #F1F5F9;">
+          <div style="font-size:12.5px;font-weight:700;color:#334155;margin-bottom:8px;">전체 체크인 이력 (평가 참고 자료)</div>
+          <div id="gm-history-list" style="font-size:12.5px;color:#475569;">불러오는 중...</div>
         </div>
-        <div style="margin-top:16px;">
-          <div style="font-size:13px;color:#475569;margin-bottom:6px;">진행 코멘트</div>
-          <textarea id="gm-comment" placeholder="이번 진행 상황을 기록하세요."></textarea>
-        </div>
-        <button id="gm-submit-checkin" class="gm-btn dark" style="width:100%;margin-top:14px;padding:10px 0;">체크인 저장</button>
-        <div id="gm-checkin-err" style="color:#B91C1C;font-size:12px;margin-top:8px;"></div>
       </div>`;
     document.body.appendChild(backdrop);
+    $('#gm-modal-close', backdrop).addEventListener('click', () => backdrop.remove());
+
+    // 전체 이력 로드
+    loadCheckins(goalId).then(rows => {
+      const hist = $('#gm-history-list', backdrop);
+      if (!rows.length) { hist.innerHTML = '<div class="gm-empty" style="padding:14px 0;">아직 체크인 기록이 없습니다.</div>'; return; }
+      hist.innerHTML = rows.map(c => `
+        <div style="padding:8px 0;border-bottom:1px solid #F8FAFC;">
+          <div style="display:flex;justify-content:space-between;">
+            <b style="color:#0F172A;">${escapeHtml(c.profiles?.name || c.author_id)}</b>
+            <span style="color:#94A3B8;">${(c.created_at||'').slice(0,16).replace('T',' ')}</span>
+          </div>
+          <div style="margin-top:2px;">진척도 ${c.progress_snapshot}% — ${escapeHtml(c.comment||'(코멘트 없음)')}</div>
+        </div>`).join('');
+    });
+
+    if (!mineFlag) return;
     const range = $('#gm-progress-range', backdrop);
     range.addEventListener('input', () => {
       $('#gm-progress-val', backdrop).textContent = range.value + '%';
       $('#gm-progress-bar', backdrop).innerHTML = bar(Number(range.value), 10);
     });
-    $('#gm-modal-close', backdrop).addEventListener('click', () => backdrop.remove());
     $('#gm-submit-checkin', backdrop).addEventListener('click', async () => {
       const p = Number(range.value);
       const comment = $('#gm-comment', backdrop).value;
@@ -500,10 +532,10 @@
   function renderRow(g, depth, hasChildren) {
     const status = statusOf(g);
     const toggle = hasChildren ? `<button class="gm-toggle" data-id="${g.id}" style="border:none;background:none;cursor:pointer;color:#94A3B8;">${expanded.has(g.id)?'▾':'▸'}</button>` : `<span style="display:inline-block;width:14px;"></span>`;
-    const action = isMine(g) ? `<button class="gm-btn" data-checkin="${g.id}" style="padding:3px 8px;font-size:11.5px;">체크인</button>` : '';
+    const action = isMine(g) ? `<button class="gm-btn" data-checkin="${g.id}" style="padding:3px 8px;font-size:11.5px;">체크인</button>` : `<button class="gm-btn ghost" data-checkin="${g.id}" style="padding:3px 8px;font-size:11.5px;">이력</button>`;
     return `<div class="gm-table-row" style="padding:9px 16px;">
       <div style="display:flex;align-items:center;gap:6px;padding-left:${depth*16}px;">
-        ${toggle}<span style="font-weight:${depth===0?700:500};">${escapeHtml(g.name)}</span>
+        ${toggle}<span style="font-weight:${depth===0?700:500};cursor:pointer;" data-checkin="${g.id}">${escapeHtml(g.name)}</span>
       </div>
       <div>${bar(g.cached_progress||0,6)}</div>
       <div style="font-size:12px;font-weight:600;">${g.cached_progress||0}%</div>
